@@ -4,6 +4,75 @@ from torch import nn
 import torch.nn.functional as F
 
 
+class Embedder(nn.Module):
+    def __init__(self, text_embedding_vectors):
+        super(Embedder, self).__init__()
+        self.embeddings = nn.Embedding.from_pretrained(
+            embeddings=text_embedding_vectors, freeze=True
+        )
+
+    def forward(self, words):
+        word_vector = self.embeddings(words)
+        return word_vector
+
+
+class PositionalEncoder(nn.Module):
+    """Embedding position vectors in word vectors
+
+    Attributes:
+        features_dim (int): Number of features in word vector
+        pe (torch.Tensor(1, max_len, features_dim)): position vectors
+    """
+
+    def __init__(self, features_dim=512, text_max_len=256, device=torch.device('cpu')):
+        """
+        Args:
+            features_dim (int): Number of features in word vector
+            text_max_len (int): The maximum length of text
+            device (torch.device): using device(cuda or cpu)
+        """
+        super(PositionalEncoder, self).__init__()
+        self.features_dim = features_dim
+
+        pe = torch.zeros(text_max_len, features_dim)
+        pe = pe.to(device)
+
+        # Position vector generation
+        for pos in range(text_max_len):
+            for i in range(0, features_dim, 2):
+                pe[pos, i] = math.sin(pos / (10000 ** ((2 * i)/features_dim)))
+                pe[pos, i + 1] = math.cos(pos / (10000 ** ((2 * (i + 1))/features_dim)))
+
+        self.pe = pe.unsqueeze(0)
+        self.pe.requires_grad = False
+
+    def forward(self, inputs):
+        ret = math.sqrt(self.features_dim)*inputs + self.pe
+        return ret
+
+
+class FeedForward(nn.Module):
+    """Simple full connected module
+
+    Attributes:
+        linear1 (torch.nn.Linear): The first layer
+        dropout (torch.nn.Dropout): Dropout layer
+        linear2 (torch.nn.Linear): The second layer
+    """
+
+    def __init__(self, features_dim=512, hidden_dim=1024, dropout_rate=0.1):
+        super(FeedForward, self).__init__()
+        self.linear1 = nn.Linear(features_dim, hidden_dim)
+        self.dropout = nn.Dropout(dropout_rate)
+        self.linear2 = nn.Linear(hidden_dim, features_dim)
+
+    def forward(self, inputs):
+        out = self.linear1(inputs)
+        out = self.dropout(F.relu(out))
+        out = self.linear2(out)
+        return out
+
+
 class MultiHeadAttention(nn.Module):
     """multi-head attention module
 
@@ -16,21 +85,21 @@ class MultiHeadAttention(nn.Module):
         dropout (torch.nn.Dropout): Dropout layer for weights of attention processing
         out_linear (torch.nn.Linear): Full connected layer for output
         head_num (int): Number of multi-head
-        attention_dim (int): Number of dimension of　q, v, and k features
+        features_dim (int): Number of dimension of　q, v, and k features
         head_dim (int): Number of dimension of a single head
 
     """
-    def __init__(self, attention_dim=512, head_num=8, dropout_rate=0.1):
+    def __init__(self, features_dim=512, head_num=8, dropout_rate=0.1):
         super(MultiHeadAttention, self).__init__()
-        self.q_linear = nn.Linear(attention_dim, attention_dim)
-        self.v_linear = nn.Linear(attention_dim, attention_dim)
-        self.k_linear = nn.Linear(attention_dim, attention_dim)
+        self.q_linear = nn.Linear(features_dim, features_dim)
+        self.v_linear = nn.Linear(features_dim, features_dim)
+        self.k_linear = nn.Linear(features_dim, features_dim)
         self.dropout = nn.Dropout(dropout_rate)
 
-        self.out_linear = nn.Linear(attention_dim, attention_dim)
+        self.out_linear = nn.Linear(features_dim, features_dim)
         self.head_num = head_num
-        self.attention_dim = attention_dim
-        self.head_dim = attention_dim // head_num
+        self.attention_dim = features_dim
+        self.head_dim = features_dim // head_num
 
     def forward(self, q, k, v, mask=None):
         """multi-head attention processing
@@ -74,12 +143,3 @@ class MultiHeadAttention(nn.Module):
         batch_size, _, length, _ = inputs.shape
         combine_inputs = torch.reshape(torch.transpose(inputs, 1, 2), (batch_size, length, self.attention_dim))
         return combine_inputs
-
-
-if __name__ == '__main__':
-    model = MultiHeadAttention(attention_dim=16)
-    tensor = torch.rand(2, 10, 16)
-    mask = torch.ones(2, 10)
-    mask[0][0:5] = 0
-    out = model(tensor, tensor, tensor, mask)
-    print(out.shape)
