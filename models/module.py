@@ -5,13 +5,18 @@ import torch.nn.functional as F
 
 
 class Embedder(nn.Module):
-    def __init__(self, text_embedding_vectors):
+    def __init__(self, vocab_size, features_dim):
         super(Embedder, self).__init__()
-        self.embeddings = nn.Embedding.from_pretrained(
-            embeddings=text_embedding_vectors, freeze=True
-        )
+        self.embeddings = nn.Embedding(vocab_size, features_dim)
 
     def forward(self, words):
+        """
+        Args:
+            words (torch.LongTensor(batch_num, data_len)): Word sequence of a sentence.
+
+        Returns:
+            torch.FloatTensor(batch_num, data_len, feature_num): Word sequences of sentences made into vector
+        """
         word_vector = self.embeddings(words)
         return word_vector
 
@@ -21,7 +26,7 @@ class PositionalEncoder(nn.Module):
 
     Attributes:
         features_dim (int): Number of features in word vector
-        pe (torch.Tensor(1, max_len, features_dim)): position vectors
+        pe (torch.FloatTensor(1, max_len, features_dim)): position vectors
     """
 
     def __init__(self, features_dim=512, text_max_len=256, device=torch.device('cpu')):
@@ -67,6 +72,13 @@ class FeedForward(nn.Module):
         self.linear2 = nn.Linear(hidden_dim, features_dim)
 
     def forward(self, inputs):
+        """
+        Args:
+            inputs (torch.FloatTensor(batch_num, data_len, feature_num)):
+
+        Returns:
+            torch.FloatTensor(batch_num, data_len, feature_num)
+        """
         out = self.linear1(inputs)
         out = self.dropout(F.relu(out))
         out = self.linear2(out)
@@ -91,12 +103,12 @@ class MultiHeadAttention(nn.Module):
     """
     def __init__(self, features_dim=512, head_num=8, dropout_rate=0.1):
         super(MultiHeadAttention, self).__init__()
-        self.q_linear = nn.Linear(features_dim, features_dim)
-        self.v_linear = nn.Linear(features_dim, features_dim)
-        self.k_linear = nn.Linear(features_dim, features_dim)
+        self.q_linear = nn.Linear(features_dim, features_dim).float()
+        self.v_linear = nn.Linear(features_dim, features_dim).float()
+        self.k_linear = nn.Linear(features_dim, features_dim).float()
         self.dropout = nn.Dropout(dropout_rate)
 
-        self.out_linear = nn.Linear(features_dim, features_dim)
+        self.out_linear = nn.Linear(features_dim, features_dim).float()
         self.head_num = head_num
         self.attention_dim = features_dim
         self.head_dim = features_dim // head_num
@@ -107,14 +119,16 @@ class MultiHeadAttention(nn.Module):
         Calculate the similarity of the arguments q and k, and multiply them by argument v.
         In normal-attention, the values of k and v will be the same, and in self-attention, q, k, and v will all be the same.
         Args:
-            q (torch.Tensor(batch_num, data_len, feature_num)): Query to be compared for similarity.
-            k (torch.Tensor(batch_num, data_len, feature_num)): Key for calculating the similarity.
-            v (torch.Tensor(batch_num, data_len, feature_num)): Value to be multiplied by similarity.
-            mask (torch.Tensor(batch_num, data_len)): Mask for features not considered. Classify by 0 and 1.
+            q (torch.FloatTensor(batch_num, data_len, feature_num)): Query to be compared for similarity.
+            k (torch.FloatTensor(batch_num, data_len, feature_num)): Key for calculating the similarity.
+            v (torch.FloatTensor(batch_num, data_len, feature_num)): Value to be multiplied by similarity.
+            mask (torch.LongTensor(batch_num, data_len)): Mask for features not considered. Classify by 0 and 1.
 
         Returns:
-            torch.Tensor(batch_num, data_len, feature_num): Value through the attention process.
+            torch.FloatTensor(batch_num, data_len, feature_num): Value through the attention process.
         """
+
+        # (batch_num, data_len, feature_num) -> (batch_num, head_num, data_len, feature_num/head_num)
         q = self._split_head(self.q_linear(q))
         k = self._split_head(self.k_linear(k))
         v = self._split_head(self.v_linear(v))
@@ -131,6 +145,7 @@ class MultiHeadAttention(nn.Module):
 
         normalized_weights = F.softmax(weights, dim=-1)
 
+        # (batch_num, head_num, data_len, feature_num/head_num) -> (batch_num, data_len, feature_num)
         output = self._combine_head(torch.matmul(normalized_weights, v))
         return self.out_linear(output)
 

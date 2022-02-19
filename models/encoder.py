@@ -15,9 +15,9 @@ class TransformerEncoder(nn.Module):
         transformer1 ~ transformer6 (TransformerEncoderBlock): self-attention and feedforward module
 
     """
-    def __init__(self, text_embedding_vectors, features_dim=512, head_num=8, text_max_len=256, device=torch.device('cpu')):
+    def __init__(self, vocab_size=30000, features_dim=512, head_num=8, text_max_len=256, device=torch.device('cpu')):
         super(TransformerEncoder, self).__init__()
-        self.embedder = Embedder(text_embedding_vectors)
+        self.embedder = Embedder(vocab_size=vocab_size, features_dim=features_dim)
         self.positional_encoder = PositionalEncoder(features_dim=features_dim, text_max_len=text_max_len, device=device)
         self.transformer1 = TransformerEncoderBlock(features_dim=features_dim, head_num=head_num)
         self.transformer2 = TransformerEncoderBlock(features_dim=features_dim, head_num=head_num)
@@ -26,17 +26,25 @@ class TransformerEncoder(nn.Module):
         self.transformer5 = TransformerEncoderBlock(features_dim=features_dim, head_num=head_num)
         self.transformer6 = TransformerEncoderBlock(features_dim=features_dim, head_num=head_num)
 
-    def forward(self, words, mask):
+    def forward(self, words, encoder_mask):
+        """
+        Args:
+            words (torch.LongTensor(batch_num, data_len)): Encoder word sequence of a sentence.
+            encoder_mask (torch.LongTensor(batch_num, data_len)(0 or 1)): mask for encoder
+
+        Returns:
+            torch.FloatTensor(batch_num, data_len, feature_num): features of encoder
+        """
         word_vector = self.embedder(words)
 
         positional_word_vector = self.positional_encoder(word_vector)
 
-        features = self.transformer1(positional_word_vector, mask)
-        features = self.transformer2(features, mask)
-        features = self.transformer3(features, mask)
-        features = self.transformer4(features, mask)
-        features = self.transformer5(features, mask)
-        features = self.transformer6(features, mask)
+        features = self.transformer1(positional_word_vector, encoder_mask)
+        features = self.transformer2(features, encoder_mask)
+        features = self.transformer3(features, encoder_mask)
+        features = self.transformer4(features, encoder_mask)
+        features = self.transformer5(features, encoder_mask)
+        features = self.transformer6(features, encoder_mask)
 
         return features
 
@@ -47,10 +55,10 @@ class TransformerEncoderBlock(nn.Module):
     Perform self-attention and feedforward processing on the input features.
 
     Attributes:
-        norm1 (torch.nn.LayerNorm): Layer normalization before self-attention
-        norm2 (torch.nn.LayerNorm): Layer normalization before feedforward
         attention (MultiHeadAttention): self-attention module
         feedforward (FeedForward): feedforward module
+        norm1 (torch.nn.LayerNorm): Layer normalization after self-attention
+        norm2 (torch.nn.LayerNorm): Layer normalization after feedforward
         dropout1 (torch.nn.Dropout): Dropout after self-attention
         dropout2 (torch.nn.Dropout): Dropout after feedforward
 
@@ -58,27 +66,27 @@ class TransformerEncoderBlock(nn.Module):
 
     def __init__(self, features_dim=512, head_num=8, dropout_rate=0.1):
         super(TransformerEncoderBlock, self).__init__()
-        self.norm1 = nn.LayerNorm(features_dim)
-        self.norm2 = nn.LayerNorm(features_dim)
-
         self.attention = MultiHeadAttention(features_dim=features_dim, head_num=head_num)
         self.feedforward = FeedForward(features_dim=features_dim)
+
+        self.norm1 = nn.LayerNorm(features_dim)
+        self.norm2 = nn.LayerNorm(features_dim)
 
         self.dropout1 = nn.Dropout(dropout_rate)
         self.dropout2 = nn.Dropout(dropout_rate)
 
-    def forward(self, inputs, mask=None):
+    def forward(self, inputs, encoder_mask=None):
         """self-attention -> layer normalization -> dropout -> feedforward -> layer normalization -> dropout
 
         Args:
-            inputs (torch.Tensor(batch_num, data_len, feature_num)): features of encoder
-            mask (torch.Tensor(batch_num, data_len)): Mask for features not considered.
+            inputs (torch.FloatTensor(batch_num, data_len, feature_num)): features of encoder
+            encoder_mask (torch.LongTensor(batch_num, data_len)(0 or 1)): Mask for features not considered.
 
         Returns:
-            torch.Tensor(batch_num, data_len, feature_num): features of encoder
+            torch.FloatTensor(batch_num, data_len, feature_num): features of encoder
         """
         q = k = v = inputs
-        attention = self.attention(q, k, v, mask)
+        attention = self.attention(q, k, v, encoder_mask)
 
         out = inputs + self.dropout1(self.norm1(attention))
 
