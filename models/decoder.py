@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from module import MultiHeadAttention, FeedForward, PositionalEncoder, Embedder
+from utils import MultiHeadAttention, FeedForward, PositionalEncoder, Embedder
 
 
 class TransformerDecoder(nn.Module):
