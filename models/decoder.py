@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from utils import MultiHeadAttention, FeedForward, PositionalEncoder, Embedder
+from models.utils import MultiHeadAttention, FeedForward, PositionalEncoder, Embedder
 
 
 class TransformerDecoder(nn.Module):
@@ -38,7 +38,7 @@ class TransformerDecoder(nn.Module):
             decoder_mask (torch.LongTensor(batch_num, data_len)(0 or 1)): mask for decoder
 
         Returns:
-            torch.LongTensor(batch_num, data_len): Predicted value for the next value.
+            torch.LongTensor(batch_num, data_len, vocab_size): Predicted value for the next value.
         """
         word_vector = self.embedder(words)
 
@@ -70,7 +70,7 @@ class TransformerDecoder(nn.Module):
         )
         out = F.softmax(self.linear(features), dim=2)
 
-        return torch.argmax(out, dim=2)
+        return out
 
 
 class TransformerDecoderBlock(nn.Module):

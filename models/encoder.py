@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from utils import MultiHeadAttention, FeedForward, PositionalEncoder, Embedder
+from models.utils import MultiHeadAttention, FeedForward, PositionalEncoder, Embedder
 
 
 class TransformerEncoder(nn.Module):

@@ -139,7 +139,7 @@ class MultiHeadAttention(nn.Module):
         weights = torch.matmul(q, torch.transpose(k, 2, 3)) / math.sqrt(self.head_dim)
 
         if mask is not None:
-            mask = mask.unsqueeze(1).unsqueeze(3)
+
             weights = weights.masked_fill(mask == 0, -1e9)
         weights = self.dropout(weights)
 
